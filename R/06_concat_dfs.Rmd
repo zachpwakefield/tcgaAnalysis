@@ -1,0 +1,248 @@
+---
+title: "05_concat_dfs"
+author: "Zach Wakefield"
+date: '2022-11-30'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source('/projectnb2/evolution/zwakefield/tcga/procedural/00_setup.R')
+library(data.table)
+library(stringi)
+library(WGCNA)
+```
+
+
+
+```{r}
+makePan <- function(type, join_term) {
+  cancer.list <- paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/",
+      list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/")[grep(type, list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/"))],
+      sep = "")
+  df.list <- lapply(cancer.list, function(x) {
+    if (file.exists(x) & file.size(x) > 0) {
+    read.delim(x, sep = " ")
+    }
+  })
+  print("dfs read in...")
+  pan <- suppressWarnings(lapply(df.list, function(x) {if (!is.na(x)) {
+    x
+  }
+  }) %>% purrr::reduce(full_join, by=join_term))
+  print("joins complete...")
+  if (type != "id") {
+    pan[is.na(pan)] <- 0
+  }
+  return(pan)
+}
+```
+
+
+
+```{r}
+exon_type <- c("afe", "ale", "hit", "id", "kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri", "biolinks")
+join_by <- list(c("gene", "exon", "strand"),
+                c("gene", "exon", "strand"),
+                c("gene", "exon", "strand"),
+                c("gene", "exon", "strand"),
+                c("gene"),
+                c("id"),
+                c("id"),
+                c("id"),
+                c("id"),
+                c("id"),
+                c("gene"))
+
+
+for (i in 7:(length(exon_type)-1)) {
+  fwrite(makePan(exon_type[i],
+          join_by[[i]]), paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/pan_cancer/full_", exon_type[i], "_df.txt", sep = ""), quote = F, sep = " ", nThread = 14)
+  print(exon_type[i])
+}
+```
+
+```{r}
+forclassifier <- function(type, col_labels) {
+  df <- as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/pan_cancer/full_", type, "_df.txt", sep = "")))
+  dim(df)
+  if (type %in% c("se", "mxe", "ri", "a3ss", "a5ss")) {
+    df <- df[unlist(lapply(strsplit(unlist(lapply(strsplit(df$id, split = "[;]"), "[[", 1)), split = "[.]"), "[[", 1)) %in% substanceGenes,]
+  } else if (type %in% c("afe", "ale", "hit")) {
+    df <- df[unlist(lapply(strsplit(df$gene, split = "[.]"), "[[", 1)) %in% substanceGenes,]
+  } else {df <- df}
+  print("data read and in...")
+  if (type == "biolinks") {
+    b_sample_sheet <- sample_sheet[!duplicated(sample_sheet$Sample.ID),]
+    ids <- colnames(df)[-col_labels]
+    df <- df[,c(T, !duplicated(gsub("[.]", "-", unlist(lapply(strsplit(ids, split = "[.]"), function(x) paste(x[1:4], sep = ".", collapse = "."))))))]
+    ids <- colnames(df)[-col_labels]
+    df <- df[,c(T, gsub("[.]", "-", unlist(lapply(strsplit(ids, split = "[.]"), function(x) paste(x[1:4], sep = ".", collapse = ".")))) %in% b_sample_sheet$Sample.ID)]
+    ids.2 <- colnames(df)[-col_labels]
+    ids.collate <- b_sample_sheet$id[b_sample_sheet$Sample.ID %in% gsub("[.]", "-", unlist(lapply(strsplit(ids.2, split = "[.]"), function(x) paste(x[1:4], sep = ".", collapse = "."))))]
+  } else {
+    ids <- colnames(df)[-col_labels]
+    ids.collate <- unlist(lapply(gsub(pattern = "[.]", "-", unlist(lapply(stri_split_fixed(ids, '.', n=2), "[[", 2))), function(x) {
+    sample_sheet$id[sample_sheet$File.ID %in% x]
+  }))
+  
+  }
+  df <- df[,-col_labels]
+  df[length(df[,1])+1,] <- ids.collate
+  if (type != "id") {
+  df[is.na(df)] <- 0
+  }
+  # df.t <- data.frame(WGCNA::transposeBigData(df, blocksize = 30000))
+  df.t <- data.frame(t(df))
+  print(dim(df.t))
+  
+  rm(df)
+  return(df.t)
+}
+
+exon_type <- c("afe", "ale", "hit", "id", "kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri", "biolinks")
+col_ind <- list(c(1:3),
+                c(1:3),
+                c(1:3),
+                c(1:3),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1))
+
+for (i in 1:length(exon_type)) {
+  fwrite(forclassifier(exon_type[i], col_ind[[i]]), paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", exon_type[i], '_forClassifier.txt', sep = ""), quote = F, nThread = 14, sep = " ")
+  print(paste(i, "/", length(exon_type), sep = ""))
+  print(dim(as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", exon_type[i], '_nc_forClassifier.txt', sep = "")))))
+  gc(reset = T)
+  
+}
+```
+
+
+
+```{r}
+exon_type <- c("afe", "ale", "hit", "kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri", "biolinks")
+removeColNames <- function(e_t) {
+  df <- as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", e_t, '_forClassifier.txt', sep = ""), nThread = 14))
+  print(dim(df))
+  fwrite(df, paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", e_t, '_nc_forClassifier.txt', sep = ""), quote = F, nThread = 14, sep = " ")
+}
+
+for (i in exon_type) {
+  removeColNames(i)
+  print(paste(i, "/", length(exon_type), sep = ""))
+}
+
+
+df <- as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", exon_type[1], '_forClassifier.txt', sep = "")))
+head(df)
+fwrite(df[1:50,1:50], paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", exon_type[1], 'smallify.txt', sep = ""), quote = F, nThread = 14, sep = " ")
+```
+
+
+
+```{r}
+bin_forclassifier <- function(type, col_labels) {
+  type <- 'mxe'
+  col_labels <- c(1)
+  df <- as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/pan_cancer/full_", type, "_df.txt", sep = "")))
+  if (type %in% c("se", "mxe", "ri", "a3ss", "a5ss")) {
+    df <- df[unlist(lapply(strsplit(unlist(lapply(strsplit(df$id, split = "[;]"), "[[", 1)), split = "[.]"), "[[", 1)) %in% substanceGenes,]
+  } else if (type %in% c("afe", "ale", "hit")) {
+    df <- df[unlist(lapply(strsplit(df$gene, split = "[.]"), "[[", 1)) %in% substanceGenes,]
+  } else {df <- df}
+  print("data read and in...")
+  if (type == "biolinks") {
+    b_sample_sheet <- sample_sheet[!duplicated(sample_sheet$Sample.ID),]
+    ids <- colnames(df)[-col_labels]
+    df <- df[,c(T, !duplicated(gsub("[.]", "-", unlist(lapply(strsplit(ids, split = "[.]"), function(x) paste(x[1:4], sep = ".", collapse = "."))))))]
+    ids <- colnames(df)[-col_labels]
+    df <- df[,c(T, gsub("[.]", "-", unlist(lapply(strsplit(ids, split = "[.]"), function(x) paste(x[1:4], sep = ".", collapse = ".")))) %in% b_sample_sheet$Sample.ID)]
+    ids.2 <- colnames(df)[-col_labels]
+    ids.collate <- b_sample_sheet$bin_id[b_sample_sheet$Sample.ID %in% gsub("[.]", "-", unlist(lapply(strsplit(ids.2, split = "[.]"), function(x) paste(x[1:4], sep = ".", collapse = "."))))]
+  } else {
+    ids <- colnames(df)[-col_labels]
+    ids.collate <- unlist(lapply(gsub(pattern = "[.]", "-", unlist(lapply(stri_split_fixed(ids, '.', n=2), "[[", 2))), function(x) {
+    sample_sheet$bin_id[sample_sheet$File.ID %in% x]
+  }))
+  
+  }
+  df <- df[,-col_labels]
+  df[length(df[,1])+1,] <- ids.collate
+  if (type != "id") {
+  df[is.na(df)] <- 0
+  }
+  df.t <- data.frame(t(df))
+  rm(df)
+  return(df.t)
+}
+
+dim(df.t)
+fwrite(df.t, paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/binary_for_classifier/", "se", '_forClassifier.txt', sep = ""), quote = F, nThread = 14, sep = " ")
+
+
+se <- as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/se_nc_forClassifier.txt", sep = "")))
+bin_se <- se
+bin_se[,length(bin_se[1,])] <- ids.collate
+table(bin_se[,length(bin_se)])
+
+fwrite(bin_se, paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/binary_for_classifier/", "se", '_forClassifier.txt', sep = ""), quote = F, nThread = 14, sep = " ")
+
+exon_type <- c("afe", "ale", "hit", "kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri", "biolinks")
+col_ind <- list(c(1:3),
+                c(1:3),
+                c(1:3),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1),
+                c(1))
+# rm(df.t)
+for (i in 6:length(exon_type)) {
+  fwrite(bin_forclassifier(exon_type[i], col_ind[[i]]), paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/binary_for_classifier/", exon_type[i], '_forClassifier.txt', sep = ""), quote = F, nThread = 14, sep = " ")
+  print(paste(i, "/", length(exon_type), sep = ""))
+  
+}
+
+
+```
+```{r}
+exon_type <- c("afe", "ale", "hit", "kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri", "biolinks")
+smallify <- function(e_t) {
+  df <- as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", e_t, '_nc_forClassifier.txt', sep = ""), nThread = 14))
+  print(dim(df))
+  fwrite(do.call(rbind, lapply(0:33, function(x) df[which(df[,dim(df)[2]] == x)[1:20],])), 
+         paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/for_classifier/", e_t, '_mini_nc_forClassifier.txt', sep = ""),
+         quote = F, nThread = 14, sep = " ")
+  rm(df)
+}
+
+
+rm(i)
+for (q in 0:33) {
+  # i <- 1
+  df[,which(df[,dim(df)[2]] == 0)]
+  # table(df[,dim(df)[2]])
+  
+}
+df <- as.data.frame(fread(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/pan_cancer/full_mxe_df.txt", sep = "")))
+rm(e_t)
+
+for (i in exon_type[2:length(exon_type)]) {
+  gc(reset = T)
+  smallify(i)
+  print(paste(i, "/", length(exon_type), sep = ""))
+}
+which(df[,dim(df)[2]] == 1)
+
+```

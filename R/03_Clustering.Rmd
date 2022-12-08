@@ -1,0 +1,159 @@
+---
+title: "02_Clustering"
+author: "Zach Wakefield"
+date: '2022-11-28'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source('/projectnb2/evolution/zwakefield/tcga/procedural/00_setup.R')
+```
+
+
+
+## Patient-matched
+
+```{r}
+helperFun <- function(data, currType, exonClass, title, type_in, fcol_vector = col_vector) {
+  library(RColorBrewer)
+
+
+  corr_mat <- round(cor(data),4)
+  ha <- HeatmapAnnotation(Tumor_type = currType$Sample.Type, 
+                          Project_type = currType$Project.ID,
+                          BRCA_Subtype_PAM50 = currType$BRCA.BRCA_Subtype_PAM50,
+                          which = "column", col = list(Tumor_type = c("Primary Tumor" = natparks.pals("Acadia")[9], "Additional - New Primary" = natparks.pals("Acadia")[9], "Additional Metastatic" = "deeppink4", Metastatic = "deeppink4", "Recurrent Tumor" = "azure4", "Solid Tissue Normal" = natparks.pals("Acadia")[1], "Primary Blood Derived Cancer - Peripheral Blood" = natparks.pals("Acadia")[7]),
+                                                       Project_type = c(
+                                                         
+                                                         "TCGA-GBM" = fcol_vector[1],
+                                                         "TCGA-OV" = fcol_vector[2],
+                                                         "TCGA-LUSC" = fcol_vector[3],
+                                                         "TCGA-TGCT" = fcol_vector[4],
+                                                         "TCGA-LUAD" = fcol_vector[5],
+                                                         "TCGA-KIRC" = fcol_vector[6],
+                                                         "TCGA-KIRP" = fcol_vector[7],
+                                                         "TCGA-COAD" = fcol_vector[8],
+                                                         "TCGA-BRCA" = fcol_vector[9],
+                                                         "TCGA-READ" = fcol_vector[10],
+                                                         "TCGA-UCEC" = fcol_vector[11],
+                                                         "TCGA-LIHC" = fcol_vector[12],
+                                                         "TCGA-THCA" = fcol_vector[13],
+                                                         "TCGA-BLCA"  = fcol_vector[14],
+                                                         "TCGA-STAD"  = fcol_vector[15],
+                                                         "TCGA-PRAD"  = fcol_vector[16],
+                                                         "TCGA-HNSC"  = fcol_vector[17],
+                                                         "TCGA-SKCM" = fcol_vector[18],
+                                                         "TCGA-LGG" = fcol_vector[19],
+                                                         "TCGA-CESC" = fcol_vector[20],
+                                                         "TCGA-SARC" = fcol_vector[21],
+                                                         "TCGA-PAAD" = fcol_vector[22],
+                                                         "TCGA-ESCA" = fcol_vector[23],
+                                                         "TCGA-KICH" = fcol_vector[24],
+                                                         "TCGA-PCPG" = fcol_vector[25],
+                                                         "TCGA-CHOL" = fcol_vector[26],
+                                                         "TCGA-THYM" = fcol_vector[27],
+                                                         "TCGA-DLBC" = fcol_vector[28],
+                                                         "TCGA-ACC" = fcol_vector[29],
+                                                         "TCGA-LAML" = fcol_vector[30],
+                                                         "TCGA-MESO" = fcol_vector[31],
+                                                         "TCGA-UVM" = fcol_vector[32],
+                                                         "TCGA-UCS" = fcol_vector[33]
+                                                        
+                                                       ),
+                                                       BRCA_Subtype_PAM50 = c("LGr4" = col_vector2[1],
+                                                                       "LumA" = col_vector2[2],
+                                                                       "Her2" = col_vector2[3],
+                                                                       "LumB" = col_vector2[4],
+                                                                       "Normal" = col_vector2[5],
+                                                                       "Basal" = col_vector2[6],
+                                                                       "none" = col_vector2[7]
+                                                                        
+                                                         
+                                                         
+                                                         
+                                                         
+                                                       )
+                                                       ) )
+  print(Heatmap(cor(data), top_annotation = ha, row_labels = rep("", length(currType$Sample.Type
+                                                                            )), column_labels = rep("", length(currType$Sample.Type)), column_title = paste(toupper(exonClass), "Correlation Heatmap for", title, sep=" ")))
+}
+
+condHeatmap <- function(type, fsample_sheet = sample_sheet, matchedQ = c("all_samples", "patient_matched_samples")[2]) {
+  
+    if (length(type) > 1 ) {
+    title_type <- "TCGA-PanCancer"
+  } else {
+    title_type <- type
+  }
+  currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+  library(reshape2)
+  library(purrr)
+  library(tidyverse)
+  library(ComplexHeatmap)
+    print("Data Obtained")
+    print("Heatmaps being made...")
+    pdf(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/heatmaps/", title_type, "_hm.pdf", sep=""), width = 10, height =8)
+  exon.types <- c("afe", "ale", "hit", "kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri", "biolinks")
+  
+  
+    for (k in 1:length(exon.types)) {
+      if (exon.types[k] == "biolinks") {
+        if (file.exists(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", exon.types[k], "_df.txt", sep = ""))) {
+        bl.currType <- currType
+        df <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", exon.types[k], "_df.txt", sep = ""), sep = " ")
+        in.ids <- unique(unlist(lapply(strsplit(colnames(df), split = "[.]"), function(x) paste(x[1:4], collapse = "-"))))
+        bl.currType <- bl.currType[bl.currType$Sample.ID %in% in.ids,]
+        bl.currType$Sample.ID <- factor(bl.currType$Sample.ID, levels=in.ids)
+        bl.currType <- bl.currType[order(bl.currType$Sample.ID),]
+        try(helperFun(df[,colnames(df) != "gene"], bl.currType, exon.types[k], title_type, type))
+        }
+      } else if (exon.types[k] %in% c("se", "a3ss", "a5ss", "mxe", "ri", "kallisto")) {
+            
+              df <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", exon.types[k], "_df.txt", sep = ""), sep = " ")
+      helperFun(df[,-c(1)], currType, exon.types[k], title_type, type)
+      
+        
+        }
+      
+      else {
+        df <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", exon.types[k], "_df.txt", sep = ""), sep = " ")
+        helperFun(df[,-c(1:3)], currType, exon.types[k], title_type, type)
+      }
+      
+    }
+
+  dev.off()
+}
+
+
+```
+
+
+
+
+
+```{r}
+for (i in unique(matchedSample_sheet$Project.ID)) {
+  condHeatmap(i, fsample_sheet = matchedSample_sheet, matchedQ = c("all_samples", "patient_matched_samples")[2])
+  print(i)
+  print(which(unique(matchedSample_sheet$Project.ID) %in% i))
+}
+
+```
+
+
+
+
+
+
+
+```{r}
+makePCA <- function() {
+  
+}
+makeTSNE <- function() {
+  
+}
+```
+

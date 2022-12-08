@@ -1,0 +1,225 @@
+---
+title: "03_PM_Linkages"
+author: "Zach Wakefield"
+date: '2022-11-29'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source('/projectnb2/evolution/zwakefield/tcga/procedural/00_setup.R')
+```
+
+```{r}
+extractMatched <- function(type) {
+    nnumFE <- c()
+    nnumHFE <- c()
+    nnumLE <- c()
+    nnumHLE <- c()
+    
+    nnumAFE <- c()
+    nnumALE <- c()
+    nnumAFEperGene <- c()
+    nnumALEperGene <- c()
+    
+    tnumFE <- c()
+    tnumHFE <- c()
+    tnumLE <- c()
+    tnumHLE <- c()
+    
+    tnumAFE <- c()
+    tnumALE <- c()
+    tnumAFEperGene <- c()
+    tnumALEperGene <- c()
+  type_Matched <- matchedSample_sheet[matchedSample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+  if (length(type) > 1 ) {
+    title_type <- "TCGA-PanCancer"
+  } else {
+    title_type <- type
+  }
+  for (i in 1:length(unique(type_Matched$Case.ID))) {
+
+  caseID.df <- type_Matched[type_Matched$Case.ID %in% unique(type_Matched$Case.ID)[i],]
+  if (length(intersect(unique(caseID.df$Sample.Type), c("Primary Tumor", "Solid Tissue Normal"))) == 2) {
+    
+    t <- caseID.df$File.ID[caseID.df$Sample.Type == "Primary Tumor"][1]
+    n <- caseID.df$File.ID[caseID.df$Sample.Type == "Solid Tissue Normal"][1]
+    
+    nAFE <- read.delim(afe[grep(n, afe)[1]]) %>% dplyr::select("gene", "exon", "strand", "AFEPSI")
+    nALE <- read.delim(ale[grep(n, ale)[1]]) %>% dplyr::select("gene", "exon", "strand", "ALEPSI")
+    nHIT <- read.delim(hit[grep(n, hit)[1]]) %>% dplyr::select("gene", "exon", "strand", "HITindex", "ID")
+    
+    tAFE <- read.delim(afe[grep(t, afe)[1]]) %>% dplyr::select("gene", "exon", "strand", "AFEPSI")
+    tALE <- read.delim(ale[grep(t, ale)[1]]) %>% dplyr::select("gene", "exon", "strand", "ALEPSI")
+    tHIT <- read.delim(hit[grep(t, hit)[1]]) %>% dplyr::select("gene", "exon", "strand", "HITindex", "ID")
+    
+    nnumFE <- c(nnumFE, sum(nHIT$ID == "first"))
+    tnumFE <- c(tnumFE, sum(tHIT$ID == "first"))
+    
+    nnumHFE <- c(nnumHFE, sum(nHIT$ID == "FirstInternal_high"))
+    tnumHFE <- c(tnumHFE, sum(tHIT$ID == "FirstInternal_high"))
+    
+    nnumLE <- c(nnumLE, sum(nHIT$ID == "last"))
+    tnumLE <- c(tnumLE, sum(tHIT$ID == "last"))
+    
+    nnumHLE <- c(nnumHLE, sum(nHIT$ID == "InternalLast_high"))
+    tnumHLE <- c(tnumHLE, sum(tHIT$ID == "InternalLast_high"))
+    
+    
+    nnumAFE <- c(nnumAFE, length(nAFE$gene))
+    tnumAFE <- c(tnumAFE, length(tAFE$gene))
+    
+    nnumALE <- c(nnumALE, length(nALE$gene))
+    tnumALE <- c(tnumALE, length(tALE$gene))
+    
+        
+    nnumAFEperGene <- c(nnumAFEperGene, length(nAFE$gene)/length(unique(nAFE$gene)))
+    tnumAFEperGene <- c(tnumAFEperGene, length(tAFE$gene)/length(unique(tAFE$gene)))
+    
+    nnumALEperGene <- c(nnumALEperGene, length(nALE$gene)/length(unique(nALE$gene)))
+    tnumALEperGene <- c(tnumALEperGene, length(tALE$gene)/length(unique(tALE$gene)))
+    
+  }
+    
+
+  }
+  
+  numHFE <- data.frame(count = c(nnumHFE, tnumHFE),
+                          class = c(rep("normal", length(nnumHFE)), rep("tumor", length(tnumHFE))),
+                          color = c(rep("deeppink4", length(nnumHFE)), rep("azure", length(tnumHFE))))
+    numFE <- data.frame(count = c(nnumFE, tnumFE),
+                          class = c(rep("normal", length(nnumFE)), rep("tumor", length(tnumFE))),
+                          color = c(rep("deeppink4", length(nnumFE)), rep("azure", length(tnumFE))))
+    numHLE <- data.frame(count = c(nnumHLE, tnumHLE),
+                          class = c(rep("normal", length(nnumHLE)), rep("tumor", length(tnumHLE))),
+                          color = c(rep("deeppink4", length(nnumHLE)), rep("azure", length(tnumHLE))))
+    numLE <- data.frame(count = c(nnumLE, tnumLE),
+                          class = c(rep("normal", length(nnumLE)), rep("tumor", length(tnumLE))),
+                          color = c(rep("deeppink4", length(nnumLE)), rep("azure", length(tnumLE))))
+    
+    numAFE <- data.frame(count = c(nnumAFE, tnumAFE),
+                          class = c(rep("normal", length(nnumAFE)), rep("tumor", length(tnumAFE))),
+                          color = c(rep("deeppink4", length(nnumAFE)), rep("azure", length(tnumAFE))))
+    numALE <- data.frame(count = c(nnumALE, tnumALE),
+                          class = c(rep("normal", length(nnumALE)), rep("tumor", length(tnumALE))),
+                          color = c(rep("deeppink4", length(nnumALE)), rep("azure", length(tnumALE))))
+    numAFEperGene <- data.frame(count = c(nnumAFEperGene, tnumAFEperGene),
+                          class = c(rep("normal", length(nnumAFEperGene)), rep("tumor", length(tnumAFEperGene))),
+                          color = c(rep("deeppink4", length(nnumAFEperGene)), rep("azure", length(tnumAFEperGene))))
+    numALEperGene <- data.frame(count = c(nnumALEperGene, tnumALEperGene),
+                          class = c(rep("normal", length(nnumALEperGene)), rep("tumor", length(tnumALEperGene))),
+                          color = c(rep("deeppink4", length(nnumALEperGene)), rep("azure", length(tnumALEperGene))))
+    
+
+pdf(paste("/projectnb2/evolution/zwakefield/tcga/procedural/patient_matched_samples/pm_linkages/", title_type, ".pdf", sep=""))
+    print(ggplot(numHFE, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of HFE") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+    
+    print(ggplot(numHLE, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of HLE") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+    
+    print(ggplot(numFE, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of FE") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+    
+    print(ggplot(numLE, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of LE") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+    
+    print(ggplot(numAFE, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of AFE") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+    print(ggplot(numALE, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of ALE") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+  
+      print(ggplot(numAFEperGene, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of AFE per gene") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+      
+      
+    print(ggplot(numALEperGene, aes(x = class, y = count)) + geom_violin(fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + theme_classic() + geom_signif(comparisons = list(c("normal", "tumor")), 
+                map_signif_level=TRUE) + ylab("Number of ALE per gene") + ggtitle(paste(title_type, "Individual Matched", sep = " ")))
+      
+    
+  hfe <- makeOtherPlot(numHFE, title_type, "HFE")
+  fe <- makeOtherPlot(numFE, title_type, "FE")
+  hle <- makeOtherPlot(numHLE, title_type, "HLE")
+  le <- makeOtherPlot(numLE, title_type, "LE")
+  afe <- makeOtherPlot(numAFE, title_type, "AFE")
+  ale <- makeOtherPlot(numALE, title_type, "ALE")
+  afePerGene <- makeOtherPlot(numAFEperGene, title_type, "AFE per Gene")
+  alePerGene <- makeOtherPlot(numALEperGene, title_type, "ALE per Gene")
+  
+  write.table(data.frame(category = c("hfe", "fe", "hle", "le", "afe", "ale", "afePerGene", "alePerGene"),
+                         meanChange = c(hfe, fe, hle, le, afe, ale, afePerGene, alePerGene)), paste("/projectnb2/evolution/zwakefield/tcga/procedural/patient_matched_samples/pm_linkages/", title_type, "_meanChange.txt", sep=""),
+              quote = FALSE, row.names = FALSE)
+  
+dev.off()
+  
+  
+  
+  
+    return(list(nnumFE = nnumFE,
+                tnumFE = tnumFE,
+                nnumHFE = nnumHFE,
+                tnumHFE = tnumHFE,
+                nnumLE = nnumLE,
+                tnumLE = tnumLE,
+                nnumHLE = nnumHLE,
+                tnumHLE = tnumHLE,
+                nnumAFE = nnumAFE,
+                tnumAFE = tnumAFE,
+                nnumALE = nnumALE,
+                tnumALE = tnumALE,
+                nnumAFEperGene = nnumAFEperGene,
+                tnumAFEperGene = tnumAFEperGene,
+                nnumALEperGene = nnumALEperGene,
+                tnumALEperGene = tnumALEperGene
+              ))
+}
+
+
+
+makeOtherPlot <- function(df, type, class) {
+  ndf <- data.frame(tumor = df$count[df$class == "tumor"],
+                    normal = df$count[df$class == "normal"],
+                    type = "prop")
+  ndf$class <- ifelse(ndf$tumor-ndf$normal < 0, "red", "green")
+  p <- ggplot(ndf) + geom_segment(aes(x=1, xend=2, y=normal, yend=tumor, col=class), size=.75, show.legend=F) + 
+                  geom_vline(xintercept=1, linetype="dashed", size=.1) + 
+                  geom_vline(xintercept=2, linetype="dashed", size=.1) +
+                  scale_color_manual(labels = c("Up", "Down"), 
+                                     values = c("green"=natparks.pals("Acadia")[9], "red"=natparks.pals("Acadia")[1])) +  # color of lines
+                  labs(x="", y=paste("Number of ", class, sep="")) +  # Axis labels
+                  xlim(.5, 2.5) + ylim(0,(1.1*(max(ndf$normal, df$tumor))))  + theme_classic() + ggtitle(paste(type,  "Individual Matched", sep = " "))
+  # print(mean(ndf$tumor-ndf$normal))
+  # print(median(ndf$tumor-ndf$normal))
+  print(mean(ndf$tumor/ndf$normal))
+  print(ggplot(ndf, aes(x = type, y = tumor/normal)) + geom_violin(fill = "deeppink4")+ theme_classic() + geom_dotplot(binaxis='y', stackdir='center', dotsize=.1) + ggtitle(paste(type,  "Individual Matched", sep = " ")) + ylab(paste("Number of ", class, sep="")) +
+  geom_hline(yintercept = 1))
+  print(p)
+  # print(median(ndf$tumor/ndf$normal))
+  return(mean(ndf$tumor/ndf$normal))
+}
+
+```
+
+```{r}
+for (j in names(table(matchedSample_sheet$Project.ID)[table(matchedSample_sheet$Project.ID) > 30])) {
+  extractMatched(j)
+  print(which(names(table(matchedSample_sheet$Project.ID)[table(matchedSample_sheet$Project.ID) > 30]) %in% j))
+  print(j)
+}
+
+```
+
+
+```{r}
+change <- paste("/projectnb/evolution/zwakefield/tcga/procedural/patient_matched_samples/pm_linkages/", list.files("/projectnb/evolution/zwakefield/tcga/procedural/patient_matched_samples/pm_linkages/")[grep(".txt", list.files("/projectnb/evolution/zwakefield/tcga/procedural/patient_matched_samples/pm_linkages/"))], sep = "")
+i <- 1
+stats.l <- list()
+for (i in 1:length(change)) {
+  stats.l[[i]] <- read.delim(change[i], sep = " ")
+}
+rb.stats <- do.call(rbind, stats.l)
+
+pdf(file = "/projectnb2/evolution/zwakefield/tcga/procedural/patient_matched_samples/pm_linkages/overview.pdf")
+ggplot(rb.stats, aes(x = category, y = meanChange, fill = category)) + geom_boxplot(notch = F) + geom_dotplot(binaxis='y', stackdir='center', dotsize=.5) + theme_classic() + ylab("Mean PSI Fold Change") + xlab("Category") + geom_hline(yintercept = 1)
+dev.off()
+```
+

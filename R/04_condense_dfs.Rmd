@@ -1,0 +1,76 @@
+---
+title: "04_condense_dfs"
+author: "Zach Wakefield"
+date: '2022-11-29'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source('/projectnb2/evolution/zwakefield/tcga/procedural/00_setup.R')
+```
+
+
+```{r}
+condense <- function(type, fsample_sheet = sample_sheet, matchedQ = c("all_samples", "patient_matched_samples")[1]) {
+  # type <- "TCGA-BLCA"
+  # fsample_sheet <- sample_sheet
+  # matchedQ <- c("all_samples", "patient_matched_samples")[1]
+  # i <- "biolinks"
+  rm(df)
+  rm(new.df)
+
+  for (i in  c("afe", "ale", "hit", "id", "kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri", "biolinks")) {
+    print(i)
+  
+  if (i %in% c("afe", "ale", "hit")) {
+  
+    df <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", i, "_df.txt", sep = ""), sep = " ")
+    new.df <- df[,c(1:3)]
+    new.df$val <- rowMeans(df[,-c(1:3)])
+    write.table(new.df, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/condensed_dfs/", type, "_", i, "_df.txt", sep = ""), quote = F, row.names = F)
+      
+  } else if (i == "id") {
+    df <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", i, "_df.txt", sep = ""), sep = " ")
+    new.df <- df[,c(1:3)]
+    new.df$val <- unlist(apply(df[,-c(1:3)], 1, function(x) names(sort(table(x), decreasing = T))[1]))
+    write.table(new.df, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/condensed_dfs/", type, "_", i, "_df.txt", sep = ""), quote = F, row.names = F)
+    
+    
+    } else if (i %in% c("kallisto", "se",
+              "a3ss", "a5ss", "mxe", "ri")) {
+    df <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", i, "_df.txt", sep = ""), sep = " ")
+    new.df <- data.frame(gene = df[,1])
+    new.df$val <- rowMeans(df[,-c(1)])
+    write.table(new.df, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/condensed_dfs/", type, "_", i, "_df.txt", sep = ""), quote = F, row.names = F)
+    
+  } 
+    else {
+    try(if (file.size(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", i, "_df.txt", sep = "")) > 0) {
+        df <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/dfs/", type, "_", i, "_df.txt", sep = ""), sep = " ")
+        new.df <- data.frame(gene = df$gene)
+        new.df$val <- rowMeans(df[,colnames(df) != "gene"])
+        write.table(new.df, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", matchedQ, "/condensed_dfs/", type, "_", i, "_df.txt", sep = ""), quote = F, row.names = F)
+    })
+  }
+}
+  
+  
+  
+  
+}
+paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/", list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/")[grep("biolinks",
+                                                                                     list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/"))], sep ="")
+list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/")[grep("biolinks",
+                                                                                     list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/"))][file.size(paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/", list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/")[grep("biolinks",
+                                                                                     list.files("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/"))], sep ="")) > 0]
+```
+
+
+```{r}
+for (i in unique(sample_sheet$Project.ID)) {
+  condense(i)
+  print(which(unique(sample_sheet$Project.ID) %in% i))
+  print(i)
+}
+```

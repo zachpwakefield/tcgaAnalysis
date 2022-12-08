@@ -1,0 +1,211 @@
+---
+title: "02_HIT_Comparisons"
+author: "Zach Wakefield"
+date: '2022-11-28'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source('/projectnb2/evolution/zwakefield/tcga/procedural/00_setup.R')
+```
+
+```{r}
+compareNumHIT <- function(type, fsample_sheet = sample_sheet, selec = out_selec) {
+  currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+  norm <- currType$File.ID[currType$Sample.Type == "Solid Tissue Normal"]
+  tum <- currType$File.ID[currType$Sample.Type != "Solid Tissue Normal"]
+  afe <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", selec, "/dfs/", type, "_afe_df.txt", sep = ""), sep = " ")
+  ale <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", selec, "/dfs/", type, "_ale_df.txt", sep = ""), sep = " ")
+  ids <- read.delim(paste("/projectnb2/evolution/zwakefield/tcga/procedural/", selec, "/dfs/", type, "_id_df.txt", sep = ""), sep = " ")
+  afe.v <- apply(afe[,-c(1:3)], 2, function(x) {
+    vals <- x[x!=0]
+    genes <- unlist(lapply(strsplit(afe$gene[x!=0], split = "[.]"), "[[", 1))
+    list(length(vals), length(genes)/length(unique(genes)))
+  })
+  ale.v <- apply(ale[,-c(1:3)], 2, function(x) {
+    vals <- x[x!=0]
+    genes <- unlist(lapply(strsplit(ale$gene[x!=0], split = "[.]"), "[[", 1))
+    list(length(vals), length(genes)/length(unique(genes)))
+  })
+  ids.v <- apply(ids[,-c(1:3)], 2, function(x) {
+    vals <- x[!is.na(x)]
+    fe <- length(vals[vals == "first"])
+    hfe <- length(vals[vals == "FirstInternal_high"])
+    ie <- length(vals[vals == "internal"])
+    hle <- length(vals[vals == "InternalLast_high"])
+    le <- length(vals[vals == "last"])
+    list(fe, hfe, ie, hle, le)
+  })
+  
+  
+  typeNorm <- currType$File.ID[currType$File.ID %in% gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) & currType$Sample.Type == "Solid Tissue Normal"]
+  
+  typeTum <- currType$File.ID[currType$File.ID %in% gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) & currType$Sample.Type != "Solid Tissue Normal"]
+  
+
+## AFE Plots
+afe.df <- data.frame(counts = c(as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 1))),
+                                as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 1)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 1))))),
+                       rep("norm", length(as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 1)))))))
+(afe.plot <- ggplot(afe.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " AFE Counts", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+  
+  
+  
+afePG.df <- data.frame(counts = c(as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 2))),
+                                as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 2)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 2))))),
+                       rep("norm", length(as.numeric(unlist(lapply(afe.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 2)))))))
+(afePG.plot <- ggplot(afePG.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " AFE Counts Per Gene", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+
+
+## ALE Plots
+ale.df <- data.frame(counts = c(as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 1))),
+                                as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 1)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 1))))),
+                       rep("norm", length(as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 1)))))))
+(ale.plot <- ggplot(ale.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " ALE Counts", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+  
+  
+  
+alePG.df <- data.frame(counts = c(as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 2))),
+                                as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 2)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 2))))),
+                       rep("norm", length(as.numeric(unlist(lapply(ale.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 2)))))))
+(alePG.plot <- ggplot(alePG.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " ALE Counts Per Gene", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count Per Gene") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+
+
+
+## Exon Type Counts
+  
+## FE Plots
+fe.df <- data.frame(counts = c(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 1))),
+                                as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 1)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 1))))),
+                       rep("norm", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 1)))))))
+(fe.plot <- ggplot(fe.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " FE Counts", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+  
+## HFE Plots
+hfe.df <- data.frame(counts = c(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 2))),
+                                as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 2)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 2))))),
+                       rep("norm", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 2)))))))
+(hfe.plot <- ggplot(hfe.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " HFE Counts", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+  
+## IE Plots
+ie.df <- data.frame(counts = c(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 3))),
+                                as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 3)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 3))))),
+                       rep("norm", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 3)))))))
+(ie.plot <- ggplot(ie.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " IE Counts", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+  
+## HLE Plots
+hle.df <- data.frame(counts = c(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 4))),
+                                as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 4)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 4))))),
+                       rep("norm", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 4)))))))
+(hle.plot <- ggplot(hle.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " HLE Counts", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+
+## LE Plots
+le.df <- data.frame(counts = c(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 5))),
+                                as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 5)))),
+                     class = c(rep("tum", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% tum)], "[[", 5))))),
+                       rep("norm", length(as.numeric(unlist(lapply(ids.v[which(gsub(pattern = "[.]", replacement = "-", unlist(lapply(strsplit(colnames(afe)[-c(1:3)], split = "PSI."), "[[", 2))) %in% norm)], "[[", 5)))))))
+(le.plot <- ggplot(le.df, aes(x = class, y = counts, fill = class)) + 
+    geom_violin(trim = TRUE,fill = c(rep(natparks.pals("Acadia")[1], 512), rep(natparks.pals("Acadia")[9], 512))) + 
+    ggtitle(paste(type, " LE Counts", sep = "")) + 
+    theme_classic() + 
+    scale_fill_brewer(palette="Blues") +
+    geom_boxplot(width=0.1, fill="deeppink4",alpha = .5, outlier.shape = NA, color = "#FFDB6D") +
+    ylab("Exon Count") + xlab("Sample Type") + 
+    geom_signif(comparisons = list(c("norm", "tum")), map_signif_level=TRUE))
+
+
+pdf(file = paste("/projectnb2/evolution/zwakefield/tcga/procedural/", selec, "/HIT_counts/", type, "_HITcounts.pdf", sep = ""))
+print(afe.plot)
+print(afePG.plot)
+print(ale.plot)
+print(alePG.plot)
+print(fe.plot)
+print(hfe.plot)
+print(ie.plot)
+print(hle.plot)
+print(le.plot)
+dev.off()
+}
+
+```
+
+
+
+
+
+
+
+
+```{r}
+sample_selection <- matchedSample_sheet
+out_selec <- "patient_matched_samples"
+for (i in unique(sample_selection$Project.ID)) {
+  if (sum(sample_selection$Sample.Type[sample_selection$Project.ID %in% i] %in% "Solid Tissue Normal") > 1) {
+  compareNumHIT(i, fsample_sheet = sample_selection, selec = out_selec)
+  print(i)
+  }
+}
+```

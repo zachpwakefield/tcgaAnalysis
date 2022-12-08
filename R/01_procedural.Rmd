@@ -1,0 +1,345 @@
+---
+title: "procedural"
+author: "Zach Wakefield"
+date: '2022-11-21'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+source('/projectnb2/evolution/zwakefield/tcga/procedural/00_setup.R')
+```
+
+```{r}
+# files <- list.files("/projectnb2/evolution/zwakefield/tcga/runs/")
+# 
+# matchedSample_sheet <- sample_sheet[sample_sheet$Case.ID %in% names(table(sample_sheet$Case.ID)[table(sample_sheet$Case.ID) >= 2]),] %>% arrange(Case.ID)
+# 
+# matchedSample_sheet <- matchedSample_sheet[matchedSample_sheet$Case.ID %in% unique(matchedSample_sheet$Case.ID)[unlist(lapply(unique(matchedSample_sheet$Case.ID), function(x) sum(c("Primary Tumor", "Solid Tissue Normal") %in% matchedSample_sheet$Sample.Type[matchedSample_sheet$Case.ID == x]) == 2))],]
+# 
+# sample_sheet <- read.delim("/projectnb2/evolution/zwakefield/tcga/metadata/sample_sheet_full_metadata.txt", sep = "\t") %>% filter(File.ID %in% files)
+# 
+# sample_sheet <- sample_sheet[!duplicated(sample_sheet),]
+# 
+# kallisto <-paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/kallisto/abundance.tsv", sep ="")
+# 
+# se <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/rmats/SE.MATS.JC.txt", sep = "")
+# 
+# ri <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/rmats/RI.MATS.JC.txt", sep = "")
+# 
+# mxe <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/rmats/MXE.MATS.JC.txt", sep = "")
+# 
+# a5ss <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/rmats/A5SS.MATS.JC.txt", sep = "")
+# 
+# a3ss <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/rmats/A3SS.MATS.JC.txt", sep = "")
+# 
+# afe <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/hit/", paste(files, ".AFEPSI", sep = ""), sep = "")
+# 
+# ale <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/hit/", paste(files, ".ALEPSI", sep = ""), sep = "")
+# 
+# hit <- paste("/projectnb2/evolution/zwakefield/tcga/runs/", files, "/hit/", paste(files, ".exon", sep = ""), sep = "")
+
+```
+
+
+```{r}
+extract_Biolinks <- function(type, fsample_sheet = sample_sheet) {
+  q <- GDCquery(
+    project = type,
+    data.category = "Transcriptome Profiling", 
+    data.type = "Gene Expression Quantification",
+    workflow.type = "STAR - Counts"
+  )
+  GDCdownload(q)
+  q_d <- GDCprepare(q)
+  data2 <- q_d
+  q_d2 <- data.frame(assay(q_d))
+  geneWiseCounts <- apply(q_d2, 1, sum)
+  CountGreater0 <- geneWiseCounts > 0
+  q_d2 <- q_d2[ CountGreater0, ]
+  q_d2 <- log((q_d2) + 1, 2)
+  rownames(q_d2) <- unlist(lapply(strsplit(rownames(q_d2), split = "[.]"), "[[", 1))
+  q_d2$gene <- rownames(q_d2)
+  q_d2 <- q_d2 %>% dplyr::relocate(gene)
+
+  qc_p <- q_d2[,c(TRUE, q_d$sample %in% fsample_sheet$Sample.ID[fsample_sheet$File.ID %in% unlist(lapply(strsplit(kallisto[!is.na(kallisto)], split = '[/]'), "[[", 7))])]
+  currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+  return(list(gex = qc_p,
+              currType = currType))
+  
+}
+
+
+extract_Kallisto <- function(type, fKal.list = kallisto, fsample_sheet = sample_sheet) {
+  currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+  kal.vals <- foreach(i = 1:length(currType$File.ID)) %dopar% {
+
+    library(tidyverse)
+    library(ComplexHeatmap)
+    library(reshape2)
+    library(purrr)
+    
+    temp <- read.delim(fKal.list[grep(currType$File.ID[i], fKal.list)[1]], sep = "\t")
+    temp <- temp[temp$tpm > 0,]
+    temp$gene <- unlist(lapply(strsplit(unlist(lapply(strsplit(temp$target_id, split = "[|]"), "[[", 2)), split = "[.]"), "[[", 1))
+    tempm <- temp %>% dplyr::select(gene, tpm)
+    tempa <- aggregate(tpm~gene, tempm, sum)
+    colnames(tempa)[2] <- paste(colnames(tempa)[2], ".", currType$File.ID[i], sep="")
+    tempa
+  }
+  
+  kal.t <- suppressWarnings(lapply(kal.vals, function(x) {if (!is.na(x)) {
+    x
+  }
+  }) %>% purrr::reduce(full_join, by=c('gene')))
+  
+  kal.t[is.na(kal.t)] <- 0
+  kal.t[,2:length(colnames(kal.t))] <- log((kal.t[,2:length(colnames(kal.t))])+1, 2)
+  return(list(kal.t = kal.t,
+              currType = currType))
+}
+
+extract_rMATS <- function(type, ex_t, frM.list, fsample_sheet = sample_sheet) {
+  currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+  all.names <- c()
+  rM.vals <- foreach(i = 1:length(currType$File.ID)) %dopar% {
+    library(tidyverse)
+    library(ComplexHeatmap)
+    library(reshape2)
+    library(purrr)
+
+    temp <- read.delim(frM.list[grep(currType$File.ID[i], frM.list)[1]])
+
+      if (ex_t == "SE") {
+            temp <- temp %>% dplyr::select('GeneID', "chr", "strand", "exonStart_0base", "exonEnd", "upstreamES", "upstreamEE", "downstreamES", "downstreamEE", "IncLevel1")
+              temp$id <- paste(temp$GeneID, temp$chr, temp$strand, temp$exonStart_0base, temp$exonEnd, temp$upstreamES,
+                               temp$upstreamEE, temp$downstreamES, temp$downstreamEE,sep = ";")
+             
+      } else if (ex_t == "A3SS" | ex_t == "A5SS") {
+            temp <- temp %>% dplyr::select('GeneID', "chr", "strand", "longExonStart_0base", "longExonEnd", "shortES", "shortEE", "flankingES", "flankingEE", "IncLevel1", "IncLevel2")
+              temp$id <- paste(temp$GeneID, temp$chr, temp$strand, temp$longExonStart_0base, temp$longExonEnd, temp$shortES,
+                               temp$shortEE, temp$flankingES, temp$flankingEE,sep = ";")
+        
+      } else if (ex_t == "MXE") {
+            temp <- temp %>% dplyr::select('GeneID', "chr", "strand", "X1stExonStart_0base", "X1stExonEnd", "X2ndExonStart_0base", "X2ndExonEnd", "upstreamES", "upstreamEE", "downstreamES", "downstreamEE", "IncLevel1", "IncLevel2")
+              temp$id <- paste(temp$GeneID, temp$chr, temp$strand, temp$X1stExonStart_0base, temp$X1stExonEnd, temp$X2ndExonStart_0base, temp$X2ndExonEnd,temp$upstreamES,
+                               temp$upstreamEE, temp$downstreamES, temp$downstreamEE,sep = ";")
+              
+      } else if (ex_t == "RI") {
+            temp <- temp %>% dplyr::select('GeneID', "chr", "strand", "riExonStart_0base", "riExonEnd", "upstreamES", "upstreamEE", "downstreamES", "downstreamEE", "IncLevel1", "IncLevel2")
+          temp$id <- paste(temp$GeneID, temp$chr, temp$strand, temp$riExonStart_0base, temp$riExonEnd, temp$upstreamES,
+                           temp$upstreamEE, temp$downstreamES, temp$downstreamEE,sep = ";")
+      }
+
+    if (!(length(temp$IncLevel1) == sum(is.na(temp$IncLevel1)))) {
+      temp <- temp %>% dplyr::select(id, IncLevel1)
+    } else {
+      temp <- temp %>% dplyr::select(id, IncLevel2)
+    }
+    colnames(temp)[2] <- "IncLevel" #paste("IncLevel", ".", currType$File.ID[i], sep="")
+    temp <- temp[!(is.na(temp$IncLevel)),]
+    temp <- temp %>% arrange(id)
+    temp <- temp[!duplicated(temp$id),]
+    temp
+    
+  }
+  
+  
+  
+  
+  ids <- unique(unlist(lapply(rM.vals, function(x) x$id)))
+  inco <- data.frame(id = ids, IncLevel = NA)
+  try2 <- foreach(i =1:length(rM.vals)) %dopar% {
+    hm <- rM.vals[[i]]
+    try <-rbind(hm, inco)
+    try <- try[!(duplicated(try$id)),] %>% arrange(id)
+    # progress(table(is.na(try2[[i]]$IncLevel))[[1]], as.numeric(table(is.na(hm$IncLevel))))
+    colnames(try)[2] <- paste("IncLevel", ".", currType$File.ID[i], sep="")
+    try
+  }
+  table(unlist(lapply(try2, function(x) setequal(try2[[1]]$id, x$id))))
+  comb.df <- do.call(cbind, try2)
+  rM.comb <- comb.df[c(1, seq(2, length(colnames(comb.df)), by = 2))]
+  lapply(try2, function(x) dim(x))
+  rM.comb[is.na(rM.comb)] <- 0
+  
+  return(list(rM.t = rM.comb,
+              currType = currType))
+}
+ 
+extract_afe <- function(type, fAFEPSI.list = afe, fsample_sheet = sample_sheet) {
+    if (length(type) > 1 ) {
+      title_type <- "TCGA-PanCancer"
+    } else {
+      title_type <- type
+    }
+    currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+    library(reshape2)
+    library(purrr)
+    type.df <- foreach (i=1:length(currType$File.ID)) %dopar% {
+      library(tidyverse)
+      t.df <- read.delim(fAFEPSI.list[grep(currType$File.ID[i], fAFEPSI.list)[1]]) %>% dplyr::select("gene", "exon", "strand", "AFEPSI")
+      colnames(t.df)[4] <- paste(colnames(t.df)[4], ".", currType$File.ID[i], sep="")
+      t.df
+    }
+    type.cAFEPSI <- suppressWarnings(lapply(type.df, function(x) {if (!is.na(x)) {
+      x
+    }
+    }) %>% purrr::reduce(full_join, by=c('gene', 'exon', 'strand')))
+    type.cAFEPSI[is.na(type.cAFEPSI)] <- 0
+    return(list(AFE = type.cAFEPSI,
+                curr = currType))
+}
+
+extract_ale <- function(type, fALEPSI.list = ale, fsample_sheet = sample_sheet) {
+    if (length(type) > 1 ) {
+      title_type <- "TCGA-PanCancer"
+    } else {
+      title_type <- type
+    }
+    currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+    library(reshape2)
+    library(purrr)
+    type.df <- foreach (i=1:length(currType$File.ID)) %dopar% {
+      library(tidyverse)
+      library(ComplexHeatmap)
+      t.df <- read.delim(fALEPSI.list[grep(currType$File.ID[i], fALEPSI.list)[1]]) %>% dplyr::select("gene", "exon", "strand", "ALEPSI")
+      colnames(t.df)[4] <- paste(colnames(t.df)[4], ".", currType$File.ID[i], sep="")
+      t.df
+    }
+    type.cALEPSI <- suppressWarnings(lapply(type.df, function(x) {if (!is.na(x)) {
+      x
+    }
+    }) %>% purrr::reduce(full_join, by=c('gene', 'exon', 'strand')))
+    type.cALEPSI[is.na(type.cALEPSI)] <- 0
+    return(list(ale = type.cALEPSI,
+                curr = currType))
+}
+
+extract_hit <- function(type, fexon.list = hit, fsample_sheet = sample_sheet) {
+    if (length(type) > 1 ) {
+      title_type <- "TCGA-PanCancer"
+    } else {
+      title_type <- type
+    }
+    currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+    library(reshape2)
+    library(purrr)
+    type.df <- foreach (i=1:length(currType$File.ID)) %dopar% {
+      library(tidyverse)
+      library(ComplexHeatmap)
+      t.df <- read.delim(fexon.list[grep(currType$File.ID[i], fexon.list)[1]]) %>% dplyr::select("gene", "exon", "strand", "HITindex")
+      colnames(t.df)[4] <- paste(colnames(t.df)[4], ".", currType$File.ID[i], sep="")
+      t.df
+    }
+    type.cExon <- suppressWarnings(lapply(type.df, function(x) {if (!is.na(x)) {
+      x
+    }
+    }) %>% purrr::reduce(full_join, by=c('gene', 'exon', 'strand')))
+    type.cExon[is.na(type.cExon)] <- 0
+    return(list(hit = type.cExon,
+                curr = currType))
+  }
+
+
+extract_id <- function(type, fexon.list = hit, fsample_sheet = sample_sheet) {
+    if (length(type) > 1 ) {
+      title_type <- "TCGA-PanCancer"
+    } else {
+      title_type <- type
+    }
+    currType <- fsample_sheet[fsample_sheet$Project.ID %in% type,] %>% arrange(Case.ID)
+    
+    type.df <- foreach (i=1:length(currType$File.ID)) %dopar% {
+      library(reshape2)
+      library(purrr)
+      library(dplyr)
+      library(tidyverse)
+      library(ComplexHeatmap)
+      t.df <- read.delim(fexon.list[grep(currType$File.ID[i], fexon.list)[1]]) %>% dplyr::select("gene", "exon", "strand", "ID")
+      colnames(t.df)[4] <- paste(colnames(t.df)[4], ".", currType$File.ID[i], sep="")
+      t.df
+    }
+    type.cID <- suppressWarnings(lapply(type.df, function(x) {if (!is.na(x)) {
+      x
+    }
+    }) %>% purrr::reduce(full_join, by=c('gene', 'exon', 'strand')))
+    return(list(id = type.cID,
+                curr = currType))
+  }
+
+```
+
+
+```{r}
+sample_selection <- matchedSample_sheet
+out_selec <- "patient_matched_samples"
+for (i in unique(sample_selection$Project.ID)) {
+  print(i)
+  rm(bio.o)
+  bio.o <- try(extract_Biolinks(i, fsample_sheet = sample_selection)[[1]])
+  try(write.table(bio.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_biolinks_df.txt", sep = ""), quote = F, row.names = F))
+  
+  print("Biolinks done...")
+
+  kal.o <- extract_Kallisto(i, fsample_sheet = sample_selection)[[1]]
+  write.table(kal.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_kallisto_df.txt", sep = ""), quote = F, row.names = F)
+  
+  print("Kallisto done...")
+  
+  afe.o <- extract_afe(i, fsample_sheet = sample_selection)[[1]]
+  write.table(afe.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_afe_df.txt", sep = ""), quote = F, row.names = F)
+  
+  ale.o <- extract_ale(i, fsample_sheet = sample_selection)[[1]]
+  write.table(ale.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_ale_df.txt", sep = ""), quote = F, row.names = F)
+  
+  hit.o <- extract_hit(i, fsample_sheet = sample_selection)[[1]]
+  write.table(hit.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_hit_df.txt", sep = ""), quote = F, row.names = F)
+  
+  print("HIT Index done...")
+  
+  
+  se.o <- extract_rMATS(i, "SE", se, fsample_sheet = sample_selection)[[1]]
+  write.table(se.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_se_df.txt", sep = ""), quote = F, row.names = F)
+  
+  a3ss.o <- extract_rMATS(i, "A3SS", a3ss, fsample_sheet = sample_selection)[[1]]
+  write.table(a3ss.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_a3ss_df.txt", sep = ""), quote = F, row.names = F)
+  
+  a5ss.o <-extract_rMATS(i, "A5SS", a5ss, fsample_sheet = sample_selection)[[1]]
+  write.table(a5ss.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_a5ss_df.txt", sep = ""), quote = F, row.names = F)
+  
+  mxe.o <- extract_rMATS(i, "MXE", mxe, fsample_sheet = sample_selection)[[1]]
+  write.table(mxe.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_mxe_df.txt", sep = ""), quote = F, row.names = F)
+  
+  ri.o <- extract_rMATS(i, "RI", ri, fsample_sheet = sample_selection)[[1]]
+  write.table(ri.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_ri_df.txt", sep = ""), quote = F, row.names = F)
+  
+  print("rMATS done...")
+  
+  
+  rm(id.o)
+  id.o <- extract_id(i, fsample_sheet = matchedSample_sheet)[[1]]
+  write.table(id.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/", out_selec, "/dfs/", i, "_id_df.txt", sep = ""), quote = F, row.names = F)
+}
+
+
+```
+
+```{r}
+# sample_selection <- sample_sheet
+# for (i in unique(sample_sheet$Project.ID)) {
+#   print(i)
+#   try(rm(id.o))
+#   id.o <- extract_id(i)[[1]]
+#   write.table(id.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/all_samples/dfs/", i, "_id_df.txt", sep = ""), quote = F, row.names = F)
+# }
+# 
+# 
+# for (i in unique(matchedSample_sheet$Project.ID)) {
+#   print(i)
+#   rm(id.o)
+#   id.o <- extract_id(i, fsample_sheet = matchedSample_sheet)[[1]]
+#   write.table(id.o, paste("/projectnb2/evolution/zwakefield/tcga/procedural/patient_matched_samples/", i, "_id_df.txt", sep = ""), quote = F, row.names = F)
+# }
+
+```
+
